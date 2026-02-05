@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  transcriber:
+    image: faster-whisper-image
+    container_name: faster-whisper
+    network_mode: host
+    env_file:
+      - .env
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    volumes:
+      - ./input:/data/input
+      - ./output:/data/output
+      - ./model_cache:/root/.cache/huggingface
+      - ./torch_cache:/root/.cache/torch

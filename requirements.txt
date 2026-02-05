@@ -1,0 +1,8 @@
+python-dotenv
+sqlalchemy
+langchain_google_genai
+chromadb
+boto3
+redis
+psycopg2-binary
+pydub
