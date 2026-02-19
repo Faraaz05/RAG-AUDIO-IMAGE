@@ -135,7 +135,6 @@ class File(Base):
     status = Column(String)  # Simple string for DB compatibility
     processed_path = Column(String)
     error_message = Column(String)
-    size = Column(Integer)
 
 # --- AUDIO PROCESSING FUNCTIONS ---
 
@@ -494,7 +493,7 @@ def create_speaker_turn_chunks(
         ])
         
         # Create enhanced content for better searchability
-        enhanced_text = f"""Audio: {audio_name}
+        enhanced_text = f"""Meeting: {audio_name}
 Project ID: {project_id}
 Date: {audio_date}
 Time Range: {start_time} - {end_time}
@@ -507,10 +506,10 @@ Transcript:
             "text": combined_text,
             "enhanced_content": enhanced_text,
             "metadata": {
-                "source_type": "audio_transcript",
+                "source_type": "meeting_transcript",
                 "project_id": project_id,
-                "audio_name": audio_name,
-                "audio_date": audio_date,
+                "meeting_name": audio_name,
+                "meeting_date": audio_date,
                 "start_time": start_time,
                 "end_time": end_time,
                 "speakers_in_chunk": json.dumps(speakers_list),
@@ -522,21 +521,40 @@ Transcript:
     log.info(f"✅ Created {len(chunks)} chunks (turns_per_chunk={turns_per_chunk}, overlap={overlap})")
     return chunks
 
-def export_transcript_to_json(transcript_result: dict, chunks: List[Dict], project_id: int, file_id: str, bucket_name: str):
+def export_transcript_to_json(transcript_result: dict, chunks: List[Dict], project_id: int, file_id: str, bucket_name: str, audio_name: str = None, audio_date: str = None):
     """
-    Export transcript and chunks to JSON in S3.
+    Export transcript to JSON in S3 matching the existing transcript schema.
     """
     log.info("📄 Exporting transcript to JSON...")
     
-    # Prepare export data with both raw transcript and chunks
+    # Extract unique speakers from segments
+    speakers = sorted(list(set(seg.get("speaker", "Unknown") for seg in transcript_result["segments"])))
+    
+    # Convert segments to turns format with timestamps as HH:MM:SS.mmm
+    def format_timestamp(seconds: float) -> str:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millisecs = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millisecs:03d}"
+    
+    turns = [
+        {
+            "timestamp": format_timestamp(seg["start"]),
+            "speaker": seg.get("speaker", "Unknown"),
+            "content": seg["text"]
+        }
+        for seg in transcript_result["segments"]
+    ]
+    
+    # Prepare export data matching the existing transcript structure
     export_data = {
-        "file_id": file_id,
-        "project_id": project_id,
-        "language": transcript_result["language"],
-        "duration": transcript_result["duration"],
-        "full_text": transcript_result["text"],
-        "segments": transcript_result["segments"],
-        "chunks": chunks
+        "meeting_name": audio_name or file_id,
+        "meeting_date": audio_date or "",
+        "total_turns": len(turns),
+        "speakers": speakers,
+        "turns": turns,
+        "is_audio": True
     }
     
     # Save to S3
@@ -687,11 +705,8 @@ def process_audio_job(job: dict):
         # 4. Export transcript and chunks to JSON in S3
         log.info("📄 Exporting transcript to S3...")
         processed_path = export_transcript_to_json(
-            transcript_result, chunks, project_id, file_id, bucket_name
+            transcript_result, chunks, project_id, file_id, bucket_name, audio_name, audio_date
         )
-        if processed_path and db_file:
-            db_file.processed_path = processed_path
-            db.commit()
         
         # 5. Create and upload compressed audio for web streaming
         log.info("🗜️ Creating compressed audio...")
@@ -710,7 +725,7 @@ def process_audio_job(job: dict):
         
         log.info("🔮 Generating embeddings...")
         embedding_model = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             task_type="retrieval_document"
         )
         
@@ -747,6 +762,8 @@ def process_audio_job(job: dict):
         
         # Finalize
         if db_file:
+            db_file.file_path = f"transcript_{audio_name}_{audio_date}"  # Change from raw path
+            db_file.processed_path = processed_path
             db_file.status = FileStatus.COMPLETED
             db.commit()
         
