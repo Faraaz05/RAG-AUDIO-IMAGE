@@ -1,4 +1,4 @@
 .env
 venv/
 torch_cache*
-model_cache/
+model_cache/*
