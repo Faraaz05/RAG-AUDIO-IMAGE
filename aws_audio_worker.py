@@ -72,7 +72,7 @@ class RedisQueue(QueueBackend):
 
 class SQSQueue(QueueBackend):
     def __init__(self, queue_url: str):
-        self.sqs = boto3.client('sqs')
+        self.sqs = boto3.client('sqs', region_name=os.getenv('AWS_REGION', 'ap-south-1'))
         self.queue_url = queue_url
     
     def send(self, payload: dict):
@@ -562,7 +562,7 @@ def export_transcript_to_json(transcript_result: dict, chunks: List[Dict], proje
     json_content = json.dumps(export_data, indent=2, ensure_ascii=False)
     json_bytes = json_content.encode('utf-8')
     
-    s3 = boto3.client('s3')
+    s3 = boto3.client('s3', region_name=os.getenv('AWS_REGION', 'us-east-1'))
     try:
         s3.put_object(
             Bucket=bucket_name,
@@ -584,7 +584,7 @@ def upload_compressed_audio_to_s3(audio_path: Path, project_id: int, file_id: st
     
     s3_key = f"projects/{project_id}/processed/{file_id}.mp3"
     
-    s3 = boto3.client('s3')
+    s3 = boto3.client('s3', region_name=os.getenv('AWS_REGION', 'us-east-1'))
     try:
         s3.upload_file(
             str(audio_path),
@@ -668,7 +668,7 @@ def process_audio_job(job: dict):
     
     try:
         # Download from S3
-        s3 = boto3.client('s3')
+        s3 = boto3.client('s3', region_name=os.getenv('AWS_REGION', 'us-east-1'))
         temp_dir = tempfile.mkdtemp()
         
         # Get file extension from file_path
